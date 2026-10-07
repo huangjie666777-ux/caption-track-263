@@ -1,0 +1,89 @@
+{
+  "HarfBuzz": "2.7.4",
+  "FriBidi": "1.0.8",
+  "packages": {
+    "libharfbuzz-dev": "2.7.4-1ubuntu3.2",
+    "libfribidi-dev": "1.0.8-2ubuntu3.1"
+  },
+  "installed_runtime_packages": "libfribidi0 1.0.8-2ubuntu3.1\nlibharfbuzz0b 2.7.4-1ubuntu3.2",
+  "downloads": {
+    "libharfbuzz-dev_2.7.4-1ubuntu3.2_amd64.deb": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/h/harfbuzz/libharfbuzz-dev_2.7.4-1ubuntu3.2_amd64.deb",
+      "sha256": "2d7d78b8661d3881ba3b772f3ab3d2c0c5f9dc7f6bd08ffe2c8e8e8fdaccf05b",
+      "verified_sha512_from_apt_metadata": "1adce4999b227228b44277608243164a2467fe0a189ef737f2ffbbcaa0b52fa47af79f1b0ba350079a44a03d32f6ac0cfa0793666a453ee6352f7c2f10dcd3bf"
+    },
+    "libfribidi-dev_1.0.8-2ubuntu3.1_amd64.deb": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/f/fribidi/libfribidi-dev_1.0.8-2ubuntu3.1_amd64.deb",
+      "sha256": "dfe2481c091d1cc79fb2a7384480120347fd23e047aee5a1f8c07829c0704ce4",
+      "verified_sha512_from_apt_metadata": "cb37f0b2e4dbe01891c47df2086fc2d1a40e4f50cce66cb3e13d8cc7f131336186ac4d51cf7b78d93412fcdd224ad80ba98f500be70a3ec24ccd75aadfbf56ec"
+    },
+    "fribidi_1.0.8.orig.tar.bz2": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/f/fribidi/fribidi_1.0.8.orig.tar.bz2",
+      "sha256": "94c7b68d86ad2a9613b4dcffe7bbeb03523d63b5b37918bdf2e4ef34195c1e6c"
+    },
+    "fribidi_1.0.8-2ubuntu3.1.debian.tar.xz": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/f/fribidi/fribidi_1.0.8-2ubuntu3.1.debian.tar.xz",
+      "sha256": "c4a0185e8b55a2520eb98575acdfbb7d42b36a1ad2b22f1c2f308a20ee3466f9"
+    },
+    "fribidi_1.0.8-2ubuntu3.1.dsc": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/f/fribidi/fribidi_1.0.8-2ubuntu3.1.dsc",
+      "sha256": "585c32773194a19ab4e64e37e86c2d9627ba1235c496fe07544f8b8f80233160"
+    }
+  },
+  "shared_os_transitive_libraries": {
+    "harfbuzz": {
+      "path": "/usr/lib/x86_64-linux-gnu/libharfbuzz.so.0.20704.0",
+      "sha256": "da47b2baefbb4e6e6058fec0c4dd0bc9d31703d94150c17c9615288188f4a118",
+      "ldd": "linux-vdso.so.1 (0x000072de0cd32000)\n\tlibglib-2.0.so.0 => /lib/x86_64-linux-gnu/libglib-2.0.so.0 (0x000072de0cb1a000)\n\tlibfreetype.so.6 => /lib/x86_64-linux-gnu/libfreetype.so.6 (0x000072de0ca52000)\n\tlibgraphite2.so.3 => /lib/x86_64-linux-gnu/libgraphite2.so.3 (0x000072de0ca2a000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000072de0c800000)\n\tlibpcre.so.3 => /lib/x86_64-linux-gnu/libpcre.so.3 (0x000072de0c78a000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x000072de0c6a3000)\n\tlibpng16.so.16 => /lib/x86_64-linux-gnu/libpng16.so.16 (0x000072de0c666000)\n\tlibz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x000072de0c64a000)\n\tlibbrotlidec.so.1 => /lib/x86_64-linux-gnu/libbrotlidec.so.1 (0x000072de0c63c000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000072de0cd34000)\n\tlibbrotlicommon.so.1 => /lib/x86_64-linux-gnu/libbrotlicommon.so.1 (0x000072de0c619000)"
+    },
+    "fribidi": {
+      "path": "/usr/lib/x86_64-linux-gnu/libfribidi.so.0.4.0",
+      "sha256": "91879069d84de2889086ad44dfc088405e7e7065e1220c1a122f8970fb1f29a9",
+      "ldd": "linux-vdso.so.1 (0x0000746cb51cd000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000746cb4e00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000746cb51cf000)"
+    }
+  },
+  "font_sha256": "690243adfefe0ce154b547db6205794bd30ac4277275179517a90994f4980648",
+  "FreeType": "2.11.1",
+  "libpng": "1.6.37",
+  "zlib": "1.2.11",
+  "additional_packages": {
+    "libfreetype-dev": "2.11.1+dfsg-1ubuntu0.4",
+    "libpng-dev": "1.6.37-3ubuntu0.6",
+    "zlib1g-dev": "1:1.2.11.dfsg-2ubuntu9.2"
+  },
+  "additional_installed_runtime_packages": "libfreetype6 2.11.1+dfsg-1ubuntu0.4\nlibpng16-16 1.6.37-3ubuntu0.6\nzlib1g 1:1.2.11.dfsg-2ubuntu9.2",
+  "additional_downloads": {
+    "libfreetype-dev_2.11.1+dfsg-1ubuntu0.4_amd64.deb": {
+      "url": "https://security.ubuntu.com/ubuntu/pool/main/f/freetype/libfreetype-dev_2.11.1%2bdfsg-1ubuntu0.4_amd64.deb",
+      "sha256": "e55191ef71f3312907d1d99e485fe9c2132b76feb256f9cfcb40c8aef47a5649",
+      "verified_sha512_from_apt_metadata": "c55f28577e6d509489132ab5ec44bfd6de9e1dbb60835da369e52cb6c7a39fcbc4f141f780f8a94e64219170daf14e7abcb4285cafc991699e50f9b4ebcf7674"
+    },
+    "libpng-dev_1.6.37-3ubuntu0.6_amd64.deb": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libp/libpng1.6/libpng-dev_1.6.37-3ubuntu0.6_amd64.deb",
+      "sha256": "02200eca438c062beb3f6e75c25afea9665a5770bad2ebda26b0bba5bff2383a",
+      "verified_sha512_from_apt_metadata": "9d6f1e7ba9c6ff9f8df620b94681b43642b5aca30df64da998aadb282daf1c9847cda2f2b38d037ae6ec388e8416a32e174efd0be86727b1dcc4d0b102a835b2"
+    },
+    "zlib1g-dev_1%3a1.2.11.dfsg-2ubuntu9.2_amd64.deb": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/z/zlib/zlib1g-dev_1.2.11.dfsg-2ubuntu9.2_amd64.deb",
+      "sha256": "679f94589586a433c31fa9f705a6fd2e3bfa2407542ba06227ce14f821647764",
+      "verified_sha512_from_apt_metadata": "e6efd17bfc272414a34d2e1c10ae22ba2383fb076b50d60a4592017d41b6f3308b0537193390a488a3b99879c2b8aed59cd270bf511a4c54c5b83b40d884ba39"
+    }
+  },
+  "additional_shared_os_transitive_libraries": {
+    "freetype": {
+      "path": "/usr/lib/x86_64-linux-gnu/libfreetype.so.6.18.1",
+      "sha256": "c338538f8d90eb85217e8525ab363e68e79b46d3c8acc0b6824190e032687e5f",
+      "ldd": "linux-vdso.so.1 (0x00007e4f450f0000)\n\tlibpng16.so.16 => /lib/x86_64-linux-gnu/libpng16.so.16 (0x00007e4f44fdf000)\n\tlibz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x00007e4f44fc3000)\n\tlibbrotlidec.so.1 => /lib/x86_64-linux-gnu/libbrotlidec.so.1 (0x00007e4f44fb5000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007e4f44c00000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007e4f44ece000)\n\tlibbrotlicommon.so.1 => /lib/x86_64-linux-gnu/libbrotlicommon.so.1 (0x00007e4f44ea9000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007e4f450f2000)"
+    },
+    "png16": {
+      "path": "/usr/lib/x86_64-linux-gnu/libpng16.so.16.37.0",
+      "sha256": "ca1306d319d9e6a904fe4b0fa21e41952db2b2f2f5384f70a1301fa713300f5b",
+      "ldd": "linux-vdso.so.1 (0x000077c60db30000)\n\tlibz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x000077c60dacb000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x000077c60d9e4000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000077c60d600000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000077c60db32000)"
+    },
+    "z": {
+      "path": "/usr/lib/x86_64-linux-gnu/libz.so.1.2.11",
+      "sha256": "64c206f0146cc58bbddc4f22054436f4ff278f5a554aa3ce6921ddf7e9133370",
+      "ldd": "linux-vdso.so.1 (0x0000742064559000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000742064200000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000074206455b000)"
+    }
+  }
+}

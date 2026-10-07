@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <png.h>
@@ -328,6 +329,208 @@ int main() {
     std::remove(png_path);
   }
   CHECK(Engine::SavePng(img, "/nonexistent-dir/x.png") == Error::kFileIo);
+
+  // ---- CompositeMask alpha regression ------------------------------
+  // White fill and white outline both at alpha 128 must stay white;
+  // the old compositor wrapped the channel and turned black.
+  {
+    RasterStyle half_white;
+    half_white.fill = Rgba{255, 255, 255, 128};
+    half_white.stroke = Rgba{255, 255, 255, 128};
+    half_white.stroke_radius = 2.0;
+    half_white.padding = 0;
+    CHECK(LaysOut(&engine, "HH", BaseDirection::kLtr, &lay));
+    CHECK(engine.RasterizeLine(lay, 32.0, half_white, &img) == Error::kOk);
+    uint8_t max_a = 0;
+    for (size_t i = 3; i < img.pixels.size(); i += 4) {
+      if (img.pixels[i] > max_a) max_a = img.pixels[i];
+    }
+    CHECK(max_a > 128);  // Overlapping fill over stroke accumulates.
+    for (size_t i = 0; i < img.pixels.size(); i += 4) {
+      if (img.pixels[i + 3] >= max_a) {
+        CHECK(img.pixels[i] >= 250 && img.pixels[i + 1] >= 250 &&
+              img.pixels[i + 2] >= 250);
+      }
+    }
+  }
+
+  // ---- Timed caption track ------------------------------------------
+  {
+    TrackStyle track_style;
+    track_style.font_size = 20.0;
+    track_style.raster.fill = Rgba{255, 255, 255, 255};
+    track_style.raster.stroke = Rgba{0, 0, 0, 255};
+    track_style.raster.stroke_radius = 1.0;
+    track_style.raster.padding = 2;
+    track_style.bottom_margin = 10;
+    track_style.line_spacing = 4;
+
+    std::vector<Caption> captions = {
+        {"first", "Hello world", 1000, 3000},
+        {"second", "overlap line", 2000, 4000},
+        {"gapless", "tail", 3000, 5000},
+    };
+
+    // Build-time validation.
+    CaptionTrack track;
+    std::vector<Caption> bad = captions;
+    bad[0].id.clear();
+    CHECK(CaptionTrack::Build(engine, bad, track_style, &track) ==
+          Error::kBadCaption);
+    bad = captions;
+    bad[1].id = "first";
+    CHECK(CaptionTrack::Build(engine, bad, track_style, &track) ==
+          Error::kBadCaption);
+    bad = captions;
+    bad[0].start_ms = 3000;  // start == end.
+    CHECK(CaptionTrack::Build(engine, bad, track_style, &track) ==
+          Error::kBadCaption);
+    bad = captions;
+    bad[0].start_ms = -1;
+    CHECK(CaptionTrack::Build(engine, bad, track_style, &track) ==
+          Error::kBadCaption);
+    bad = captions;
+    bad[0].text = "a\xff";
+    CHECK(CaptionTrack::Build(engine, bad, track_style, &track) ==
+          Error::kInvalidUtf8);
+    bad.assign(101, Caption{"x", "y", 0, 1});
+    for (size_t i = 0; i < bad.size(); ++i) {
+      bad[i].id = "id" + std::to_string(i);
+    }
+    CHECK(CaptionTrack::Build(engine, bad, track_style, &track) ==
+          Error::kBadCaption);
+    TrackStyle bad_style = track_style;
+    bad_style.font_size = 200.0;
+    CHECK(CaptionTrack::Build(engine, captions, bad_style, &track) ==
+          Error::kBadFontSize);
+
+    CHECK(CaptionTrack::Build(engine, captions, track_style, &track) ==
+          Error::kOk);
+
+    // Snapshot: mutating the caller's inputs must not affect sampling.
+    captions[0].text = "CHANGED";
+    captions[0].start_ms = 99999;
+    track_style.bottom_margin = 500;
+    track_style.bottom_margin = 10;  // Restore for later track builds.
+
+    const int fw = 320, fh = 200;
+    std::vector<uint8_t> frame(fw * fh * 4);
+    for (int i = 0; i < fw * fh; ++i) {
+      frame[i * 4 + 0] = 200;  // Semi-transparent red background.
+      frame[i * 4 + 1] = 0;
+      frame[i * 4 + 2] = 0;
+      frame[i * 4 + 3] = 128;
+    }
+    const std::vector<uint8_t> frame_copy = frame;
+    SampleResult result;
+
+    // Frame validation.
+    CHECK(track.Sample(0, nullptr, frame.size(), fw, fh, &result) ==
+          Error::kBadFrame);
+    CHECK(track.Sample(0, frame.data(), frame.size(), 0, fh, &result) ==
+          Error::kBadFrame);
+    CHECK(track.Sample(0, frame.data(), frame.size() - 4, fw, fh,
+                       &result) == Error::kBadFrame);
+    CHECK(track.Sample(0, frame.data(), frame.size(), fw, -1, &result) ==
+          Error::kBadFrame);
+    CHECK(track.Sample(0, frame.data(), 4000001u * 4, 2001, 2000,
+                       &result) == Error::kImageTooLarge);
+
+    // No active caption: frame returned unchanged, no placements.
+    CHECK(track.Sample(500, frame.data(), frame.size(), fw, fh,
+                       &result) == Error::kOk);
+    CHECK(result.captions.empty());
+    CHECK(result.frame.width == fw && result.frame.height == fh);
+    CHECK(result.frame.pixels == frame_copy);
+
+    // Single active caption, bottom-centered above the margin.
+    CHECK(track.Sample(1500, frame.data(), frame.size(), fw, fh,
+                       &result) == Error::kOk);
+    CHECK(result.captions.size() == 1);
+    CHECK(result.captions[0].id == "first");
+    const PlacedCaption* p = &result.captions[0];
+    CHECK(p->x == (fw - p->width) / 2);
+    CHECK(p->y + p->height == fh - 10);
+    CHECK(result.frame.pixels != frame_copy);
+    // Opaque white fill over semi-transparent red becomes opaque.
+    bool found_opaque_white = false;
+    for (int y = p->y; y < p->y + p->height; ++y) {
+      for (int x = p->x; x < p->x + p->width; ++x) {
+        const uint8_t* px =
+            &result.frame.pixels[(y * fw + x) * 4];
+        if (px[3] == 255 && px[0] == 255 && px[1] == 255 &&
+            px[2] == 255) {
+          found_opaque_white = true;
+        }
+      }
+    }
+    CHECK(found_opaque_white);
+    // Outside the caption rect the background is untouched.
+    CHECK(std::equal(result.frame.pixels.begin(),
+                     result.frame.pixels.begin() + p->y * fw * 4,
+                     frame_copy.begin()));
+
+    // Overlap: both captions visible, first input is the lowest.
+    CHECK(track.Sample(2500, frame.data(), frame.size(), fw, fh,
+                       &result) == Error::kOk);
+    CHECK(result.captions.size() == 2);
+    CHECK(result.captions[0].id == "first");
+    CHECK(result.captions[1].id == "second");
+    CHECK(result.captions[0].y > result.captions[1].y);
+    CHECK(result.captions[1].y + result.captions[1].height + 4 ==
+          result.captions[0].y);
+    const SampleResult overlap_result = result;
+
+    // Boundary: end is exclusive, next caption starts exactly there.
+    CHECK(track.Sample(3000, frame.data(), frame.size(), fw, fh,
+                       &result) == Error::kOk);
+    CHECK(result.captions.size() == 2);
+    CHECK(result.captions[0].id == "second");
+    CHECK(result.captions[1].id == "gapless");
+
+    // Seeking is stateless: jumping back and forth repeats exactly.
+    SampleResult again;
+    CHECK(track.Sample(2500, frame.data(), frame.size(), fw, fh,
+                       &again) == Error::kOk);
+    CHECK(again.frame.pixels == overlap_result.frame.pixels);
+    CHECK(track.Sample(100, frame.data(), frame.size(), fw, fh,
+                       &again) == Error::kOk);
+    CHECK(again.frame.pixels == frame_copy);
+    CHECK(track.Sample(2500, frame.data(), frame.size(), fw, fh,
+                       &again) == Error::kOk);
+    CHECK(again.frame.pixels == overlap_result.frame.pixels);
+
+    // The input frame was never modified.
+    CHECK(frame == frame_copy);
+
+    // No-ink captions occupy no space in the stack.
+    std::vector<Caption> with_blank = {
+        {"low", "low", 0, 1000},
+        {"blank", "   ", 0, 1000},
+        {"high", "high", 0, 1000},
+    };
+    CaptionTrack blank_track;
+    CHECK(CaptionTrack::Build(engine, with_blank, track_style,
+                              &blank_track) == Error::kOk);
+    CHECK(blank_track.Sample(0, frame.data(), frame.size(), fw, fh,
+                             &result) == Error::kOk);
+    CHECK(result.captions.size() == 2);
+    CHECK(result.captions[0].id == "low");
+    CHECK(result.captions[1].id == "high");
+    CHECK(result.captions[1].y + result.captions[1].height + 4 ==
+          result.captions[0].y);
+
+    // Too-wide and too-tall stacks fail as a whole.
+    std::vector<Caption> wide = {{"w", std::string(80, 'm'), 0, 1000}};
+    CaptionTrack wide_track;
+    CHECK(CaptionTrack::Build(engine, wide, track_style, &wide_track) ==
+          Error::kOk);
+    CHECK(wide_track.Sample(0, frame.data(), frame.size(), fw, fh,
+                            &result) == Error::kNoFit);
+    std::vector<uint8_t> tiny_frame(fw * 30 * 4, 255);
+    CHECK(track.Sample(2500, tiny_frame.data(), tiny_frame.size(), fw,
+                       30, &result) == Error::kNoFit);
+  }
 
   if (failures == 0) {
     std::printf("all selftests passed\n");

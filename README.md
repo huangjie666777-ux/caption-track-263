@@ -1,8 +1,9 @@
 # caption_track263
 
 C++17 library for laying out and rasterizing a single line of mixed
-Arabic / Hebrew / Latin text for subtitle rendering, and for mapping
-logical text selections to visual on-screen intervals.
+Arabic / Hebrew / Latin text for subtitle rendering, for mapping
+logical text selections to visual on-screen intervals, and for burning
+timed subtitle tracks into video frames.
 
 Built on FriBidi 1.0.8 (bidi analysis), HarfBuzz 2.7.4 (shaping),
 FreeType 2.11.1 (grayscale glyph rasterization and rounded outlines),
@@ -56,6 +57,31 @@ The font is `fonts/DejaVuSans.ttf`.
   - Font sizes are 8..128 pixels. Fill and outline take 8-bit RGBA
     colors.
 - PNG saving writes the in-memory pixels byte-for-byte as 8-bit RGBA.
+- Timed caption tracks (`CaptionTrack`):
+  - Built from up to 100 captions (unique non-empty id, UTF-8
+    single-line text, 64-bit millisecond times with
+    `0 <= start < end`); captions may be unordered and
+    overlapping. Every caption is validated, laid out, and rasterized
+    once at build time with the shared font size, base direction, and
+    raster style, so content and style are snapshotted; any failure
+    returns no track.
+  - `Sample` takes a non-negative millisecond time and a
+    top-left, row-major, straight (non-premultiplied) RGBA8 frame
+    (positive dimensions, matching byte count, at most 4,000,000
+    pixels) and returns a new frame plus the ids and pixel rectangles
+    of the visible captions. The input frame is never modified.
+  - Captions with `start <= t < end` are stacked in input
+    order from the bottom up (first caption lowest), each centered
+    horizontally by its image bounding box, above the configured
+    non-negative bottom margin and line spacing. Captions with no ink
+    occupy no space. Sampling is stateless: arbitrary seeks are
+    unaffected by previous calls.
+  - With no active caption the frame is returned unchanged. If a
+    caption is wider than the frame or the stack exceeds the available
+    height, the whole sample fails with `kNoFit`; nothing is
+    scaled, cropped, or partially drawn.
+  - Compositing is source-over with straight alpha; background
+    transparency and color are preserved exactly.
 
 ## Public API
 
@@ -82,6 +108,25 @@ engine.RasterizeLine(layout, 24.0, style, &image);
 // image.origin_x / origin_y: canvas top-left relative to the baseline
 //   origin (x right, y down)
 caption_track263::Engine::SavePng(image, "subtitle.png");
+
+// Timed track burned into frames:
+std::vector<caption_track263::Caption> captions = {
+    {"en", "Hello world", 1000, 3000},  // id, text, start_ms, end_ms
+    {"he", "second line", 2000, 4000},  // overlaps and stacks above
+};
+caption_track263::TrackStyle track_style;
+track_style.font_size = 28.0;
+track_style.raster = style;        // reuse the RasterStyle above
+track_style.bottom_margin = 24;    // px kept clear below the stack
+track_style.line_spacing = 8;      // px between stacked captions
+caption_track263::CaptionTrack track;
+caption_track263::CaptionTrack::Build(engine, captions, track_style,
+                                      &track);
+caption_track263::SampleResult sample;
+track.Sample(2500, frame_rgba.data(), frame_rgba.size(), 640, 360,
+             &sample);
+// sample.frame: new RGBA8 frame with captions composited
+// sample.captions: ids and pixel rects of the visible captions
 ```
 
 ## Source layout
@@ -93,6 +138,11 @@ caption_track263::Engine::SavePng(image, "subtitle.png");
 - `src/selection.cpp` — logical-to-visual selection mapping.
 - `src/raster.cpp` — FreeType grayscale raster, rounded outline,
   per-line coverage merge and source-over RGBA compositing.
+- `src/blit.cpp` — shared source-over RGBA8 compositing
+  (rounding and clamping keep semi-transparent layers from wrapping).
+- `src/track.cpp` — timed caption track: build-time validation
+  and rasterization, time-based selection, bottom-up placement, and
+  frame compositing.
 - `src/png_save.cpp` — 8-bit RGBA PNG output via libpng.
 
 ## Build, test, demo
@@ -101,6 +151,7 @@ caption_track263::Engine::SavePng(image, "subtitle.png");
 make            # builds build/libcaption_track263.a, bin/demo, bin/selftest
 make test       # runs the selftest suite
 ./bin/demo      # mixed-line layout + selection + transparent PNG example
+                # plus timed-track frames under build/frame_*.png
 ```
 
 Executables use `-Wl,-rpath,'$ORIGIN/../third_party/lib'`, so no

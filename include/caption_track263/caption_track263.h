@@ -28,6 +28,11 @@ enum class Error {
   kImageTooLarge,  // Rasterized canvas would exceed 4,000,000 pixels.
   kNoInk,          // Line has no visible pixels; nothing was rendered.
   kFileIo,         // PNG file could not be written.
+  kBadCaption,     // Caption list is invalid (bad id, times, text, or
+                   // more than 100 entries).
+  kBadFrame,       // Frame buffer is null, mis-sized, or has
+                   // non-positive dimensions.
+  kNoFit,          // Captions exceed the frame; nothing was drawn.
 };
 
 const char* ErrorMessage(Error error);
@@ -139,6 +144,76 @@ class Engine {
  private:
   struct Impl;
   Impl* impl_;
+};
+
+// One timed subtitle. id must be non-empty and unique within a track.
+// Times are milliseconds with 0 <= start_ms < end_ms.
+struct Caption {
+  std::string id;
+  std::string text;  // UTF-8, single line.
+  int64_t start_ms = 0;
+  int64_t end_ms = 0;
+};
+
+// Rendering parameters shared by every caption of a track.
+struct TrackStyle {
+  double font_size = 24.0;  // Pixels, 8..128 (see RasterizeLine).
+  BaseDirection base_direction = BaseDirection::kAuto;
+  RasterStyle raster;
+  uint32_t bottom_margin = 0;  // Clear pixels below the lowest caption.
+  uint32_t line_spacing = 0;   // Clear pixels between stacked captions.
+};
+
+// On-frame pixel rectangle of one visible caption, top-left origin.
+struct PlacedCaption {
+  std::string id;
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+};
+
+struct SampleResult {
+  RasterImage frame;  // New frame; the input frame is never modified.
+  std::vector<PlacedCaption> captions;  // Visible captions, input order.
+};
+
+// A prepared, immutable timed caption track. Captions are validated,
+// laid out, and rasterized once at Build time (content and style are
+// snapshotted), so later caller-side changes cannot affect sampling.
+class CaptionTrack {
+ public:
+  CaptionTrack() = default;
+
+  // Validates and prepares every caption. On any failure nothing is
+  // written to out. Captions may be unordered and overlapping; at most
+  // 100 entries are accepted.
+  static Error Build(Engine& engine,
+                     const std::vector<Caption>& captions,
+                     const TrackStyle& style, CaptionTrack* out);
+
+  // Composites the captions active at time_ms (start <= t < end) onto
+  // a copy of the given top-left, row-major, straight RGBA8 frame.
+  // Sampling is stateless: arbitrary seeks give identical results and
+  // the input frame is left untouched. With no active visible caption
+  // the frame is returned unchanged. If the captions do not fit the
+  // frame (too wide, or stacked height plus margins exceeds the frame
+  // height) the whole sample fails with kNoFit; nothing is scaled,
+  // cropped, or partially drawn.
+  Error Sample(uint64_t time_ms, const uint8_t* rgba, size_t byte_count,
+               int width, int height, SampleResult* out) const;
+
+ private:
+  struct Prepared {
+    std::string id;
+    int64_t start_ms = 0;
+    int64_t end_ms = 0;
+    RasterImage image;  // 0x0 when the caption has no ink.
+    bool has_ink = false;
+  };
+  std::vector<Prepared> captions_;
+  uint32_t style_bottom_margin_ = 0;
+  uint32_t style_line_spacing_ = 0;
 };
 
 }  // namespace caption_track263

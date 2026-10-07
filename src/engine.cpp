@@ -27,6 +27,9 @@ const char* ErrorMessage(Error error) {
     case Error::kImageTooLarge: return "rasterized image exceeds 4,000,000 pixels";
     case Error::kNoInk: return "line has no visible pixels";
     case Error::kFileIo: return "cannot write PNG file";
+    case Error::kBadCaption: return "invalid caption list";
+    case Error::kBadFrame: return "invalid frame buffer";
+    case Error::kNoFit: return "captions do not fit the frame";
   }
   return "unknown error";
 }

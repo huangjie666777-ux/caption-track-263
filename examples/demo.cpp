@@ -6,13 +6,17 @@
 #include "caption_track263/caption_track263.h"
 
 using caption_track263::BaseDirection;
+using caption_track263::Caption;
+using caption_track263::CaptionTrack;
 using caption_track263::Engine;
 using caption_track263::Error;
 using caption_track263::Layout;
 using caption_track263::RasterImage;
 using caption_track263::RasterStyle;
 using caption_track263::Rgba;
+using caption_track263::SampleResult;
 using caption_track263::SelectionRange;
+using caption_track263::TrackStyle;
 
 static void Dump(Engine& engine, const std::string& text,
                  BaseDirection dir) {
@@ -117,5 +121,73 @@ int main() {
               image.height, image.line_width);
   std::printf("  canvas top-left relative to baseline origin: (%d, %d)\n",
               image.origin_x, image.origin_y);
+
+  // Timed caption track: overlapping subtitles burned into video
+  // frames, sampled at arbitrary (non-monotonic) times.
+  std::vector<Caption> captions = {
+      {"en", "Hello \u0645\u0631\u062D\u0628\u0627 world", 1000, 3000},
+      {"he", "\u05E9\u05DC\u05D5\u05DD subtitle", 2000, 4000},
+  };
+  TrackStyle track_style;
+  track_style.font_size = 28.0;
+  track_style.raster.fill = Rgba{255, 255, 255, 255};
+  track_style.raster.stroke = Rgba{20, 20, 20, 255};
+  track_style.raster.stroke_radius = 2.0;
+  track_style.raster.padding = 6;
+  track_style.bottom_margin = 24;
+  track_style.line_spacing = 8;
+  CaptionTrack track;
+  Error track_err = CaptionTrack::Build(engine, captions, track_style,
+                                        &track);
+  if (track_err != Error::kOk) {
+    std::fprintf(stderr, "track build failed: %s\n",
+                 ErrorMessage(track_err));
+    return 1;
+  }
+
+  // Synthetic 640x360 "video" frame: a vertical blue gradient.
+  const int fw = 640, fh = 360;
+  std::vector<uint8_t> video(fw * fh * 4);
+  for (int y = 0; y < fh; ++y) {
+    for (int x = 0; x < fw; ++x) {
+      uint8_t* px = &video[(y * fw + x) * 4];
+      px[0] = static_cast<uint8_t>(30 + x * 60 / fw);
+      px[1] = static_cast<uint8_t>(40 + y * 80 / fh);
+      px[2] = static_cast<uint8_t>(120 + y * 100 / fh);
+      px[3] = 255;
+    }
+  }
+
+  // Seek around: only "en", then both overlapping, back before any,
+  // then only "he" -- sampling is stateless.
+  const uint64_t times[] = {1500, 2500, 500, 3500};
+  for (uint64_t t : times) {
+    SampleResult sample;
+    track_err = track.Sample(t, video.data(), video.size(), fw, fh,
+                             &sample);
+    if (track_err != Error::kOk) {
+      std::fprintf(stderr, "sample at %llu ms failed: %s\n",
+                   static_cast<unsigned long long>(t),
+                   ErrorMessage(track_err));
+      return 1;
+    }
+    char path[128];
+    std::snprintf(path, sizeof(path), "build/frame_%04llums.png",
+                  static_cast<unsigned long long>(t));
+    track_err = Engine::SavePng(sample.frame, path);
+    if (track_err != Error::kOk) {
+      std::fprintf(stderr, "png save failed: %s\n",
+                   ErrorMessage(track_err));
+      return 1;
+    }
+    std::printf("frame t=%llu ms -> %s\n",
+                static_cast<unsigned long long>(t), path);
+    for (const auto& placed : sample.captions) {
+      std::printf("  caption %s at (%d, %d) %dx%d px\n",
+                  placed.id.c_str(), placed.x, placed.y, placed.width,
+                  placed.height);
+    }
+    if (sample.captions.empty()) std::printf("  (no active captions)\n");
+  }
   return 0;
 }

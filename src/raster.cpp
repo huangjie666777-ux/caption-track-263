@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "caption_track263/caption_track263.h"
+#include "blit.h"
 #include "engine_internal.h"
 
 namespace caption_track263 {
@@ -46,30 +47,6 @@ void MergeCoverageMax(const CoverageBitmap& src,
       uint8_t& cell = (*dst)[cy * canvas_width + cx];
       if (cov > cell) cell = cov;
     }
-  }
-}
-
-void CompositeMask(const std::vector<uint8_t>& mask, int width, int height,
-                   const Rgba& color, std::vector<uint8_t>* pixels) {
-  for (int i = 0; i < width * height; ++i) {
-    unsigned sa = (static_cast<unsigned>(mask[i]) * color.a) / 255u;
-    if (sa == 0) continue;
-    uint8_t* dst = &(*pixels)[i * 4];
-    unsigned da = dst[3];
-    // Source-over with straight alpha.
-    unsigned out_a = sa + da * (255u - sa) / 255u;
-    if (out_a == 0) continue;
-    unsigned sr = color.r;
-    unsigned sg = color.g;
-    unsigned sb = color.b;
-    unsigned inv = (255u - sa);
-    unsigned out_r = (sr * sa + dst[0] * da * inv / 255u) / out_a;
-    unsigned out_g = (sg * sa + dst[1] * da * inv / 255u) / out_a;
-    unsigned out_b = (sb * sa + dst[2] * da * inv / 255u) / out_a;
-    dst[0] = static_cast<uint8_t>(out_r);
-    dst[1] = static_cast<uint8_t>(out_g);
-    dst[2] = static_cast<uint8_t>(out_b);
-    dst[3] = static_cast<uint8_t>(out_a);
   }
 }
 
@@ -237,8 +214,9 @@ Error Engine::RasterizeLine(const Layout& layout, double font_size,
   std::vector<uint8_t> pixels(width * height * 4, 0);
   // Stroke first, fill on top: the fill never gets covered by the
   // outline of an adjacent glyph.
-  CompositeMask(stroke_mask, width, height, style.stroke, &pixels);
-  CompositeMask(fill_mask, width, height, style.fill, &pixels);
+  CompositeMaskSourceOver(stroke_mask, width, height, style.stroke,
+                          &pixels);
+  CompositeMaskSourceOver(fill_mask, width, height, style.fill, &pixels);
 
   bool has_ink = false;
   for (size_t i = 3; i < pixels.size(); i += 4) {

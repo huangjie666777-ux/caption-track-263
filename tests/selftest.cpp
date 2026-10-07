@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <png.h>
 #include <string>
 #include <vector>
@@ -328,6 +329,188 @@ int main() {
     std::remove(png_path);
   }
   CHECK(Engine::SavePng(img, "/nonexistent-dir/x.png") == Error::kFileIo);
+
+  // ---- Timed caption track -----------------------------------------
+  {
+    std::vector<CaptionCue> cues = {
+        {"a", "First", 0, 1000},
+        {"b", "Second \u0645\u0631\u062D\u0628\u0627", 500, 1500},
+        {"spaces", "   ", 0, 5000},  // No ink: never occupies space.
+        {"c", "Late", 9000, 10000},
+    };
+    CaptionTrackOptions opts;
+    opts.font_size = 20.0;
+    opts.style = style;
+    opts.bottom_margin = 6;
+    opts.line_spacing = 4;
+
+    std::unique_ptr<CaptionTrack> track;
+    CHECK(BuildCaptionTrack(cues, "fonts/DejaVuSans.ttf", opts,
+                            &track) == Error::kOk);
+
+    // Build failures leave no track.
+    std::unique_ptr<CaptionTrack> bad_track;
+    std::vector<CaptionCue> empty_id = cues;
+    empty_id[0].id.clear();
+    CHECK(BuildCaptionTrack(empty_id, "fonts/DejaVuSans.ttf", opts,
+                            &bad_track) == Error::kBadCue);
+    CHECK(!bad_track);
+    std::vector<CaptionCue> dup = cues;
+    dup[1].id = "a";
+    CHECK(BuildCaptionTrack(dup, "fonts/DejaVuSans.ttf", opts,
+                            &bad_track) == Error::kDuplicateId);
+    CHECK(!bad_track);
+    std::vector<CaptionCue> bad_time = cues;
+    bad_time[0].start_ms = -1;
+    CHECK(BuildCaptionTrack(bad_time, "fonts/DejaVuSans.ttf", opts,
+                            &bad_track) == Error::kBadCue);
+    bad_time = cues;
+    bad_time[0].end_ms = bad_time[0].start_ms;
+    CHECK(BuildCaptionTrack(bad_time, "fonts/DejaVuSans.ttf", opts,
+                            &bad_track) == Error::kBadCue);
+    CaptionTrackOptions bad_margin = opts;
+    bad_margin.bottom_margin = -1;
+    CHECK(BuildCaptionTrack(cues, "fonts/DejaVuSans.ttf", bad_margin,
+                            &bad_track) == Error::kBadMargin);
+    std::vector<CaptionCue> invalid_text = cues;
+    invalid_text[0].text = "\xff";
+    CHECK(BuildCaptionTrack(invalid_text, "fonts/DejaVuSans.ttf", opts,
+                            &bad_track) == Error::kInvalidUtf8);
+    CHECK(BuildCaptionTrack(cues, "/no/such/font.ttf", opts,
+                            &bad_track) == Error::kBadFont);
+    std::vector<CaptionCue> too_many;
+    for (int i = 0; i < 101; ++i) {
+      too_many.push_back({"id" + std::to_string(i), "x",
+                          static_cast<int64_t>(i),
+                          static_cast<int64_t>(i + 1)});
+    }
+    CHECK(BuildCaptionTrack(too_many, "fonts/DejaVuSans.ttf", opts,
+                            &bad_track) == Error::kTooManyCues);
+
+    VideoFrame frame;
+    frame.width = 200;
+    frame.height = 120;
+    frame.pixels.assign(frame.width * frame.height * 4, 0);
+    for (int y = 0; y < frame.height; ++y) {
+      for (int x = 0; x < frame.width; ++x) {
+        uint8_t* p = &frame.pixels[(y * frame.width + x) * 4];
+        p[0] = 30; p[1] = 60; p[2] = 90; p[3] = 128;
+      }
+    }
+
+    // Invalid frames and negative times.
+    VideoFrame out;
+    std::vector<VisibleCaption> visible;
+    CHECK(track->Sample(0, frame, &out, &visible) == Error::kOk);
+    VideoFrame zero_w = frame; zero_w.width = 0;
+    CHECK(track->Sample(0, zero_w, &out, &visible) == Error::kBadFrame);
+    VideoFrame bad_bytes = frame; bad_bytes.pixels.pop_back();
+    CHECK(track->Sample(0, bad_bytes, &out, &visible) == Error::kBadFrame);
+    CHECK(track->Sample(-1, frame, &out, &visible) == Error::kBadFrame);
+    VideoFrame huge; huge.width = 4000; huge.height = 1001;
+    huge.pixels.assign(10, 0);
+    CHECK(track->Sample(0, huge, &out, &visible) == Error::kBadFrame);
+
+    // No active caption: exact copy and empty visible list.
+    CHECK(track->Sample(8000, frame, &out, &visible) == Error::kOk);
+    CHECK(visible.empty());
+    CHECK(out.width == frame.width && out.height == frame.height);
+    CHECK(out.pixels == frame.pixels);
+
+    // Boundaries: [start, end). At 0 only "a" is active; at 999
+    // both "a" and "b" (which starts at 500) are visible; at 1000
+    // "a" has expired and only "b" remains.
+    CHECK(track->Sample(0, frame, &out, &visible) == Error::kOk);
+    CHECK(visible.size() == 1 && visible[0].id == "a");
+    CHECK(track->Sample(999, frame, &out, &visible) == Error::kOk);
+    CHECK(visible.size() == 2 && visible[0].id == "a" &&
+          visible[1].id == "b");
+    CHECK(track->Sample(1000, frame, &out, &visible) == Error::kOk);
+    CHECK(visible.size() == 1 && visible[0].id == "b");
+
+    // Overlap: input order bottom-to-top; "a" below "b";
+    // no-ink "spaces" is never reported nor placed.
+    CHECK(track->Sample(700, frame, &out, &visible) == Error::kOk);
+    CHECK(visible.size() == 2);
+    CHECK(visible[0].id == "a" && visible[1].id == "b");
+    CHECK(visible[0].rect.y > visible[1].rect.y);
+    for (const auto& v : visible) {
+      CHECK(v.rect.x >= 0);
+      CHECK(v.rect.x + v.rect.width <= frame.width);
+      CHECK(v.rect.y >= 0);
+      CHECK(v.rect.y + v.rect.height <= frame.height);
+    }
+    // Horizontal centering.
+    int ax0 = visible[0].rect.x;
+    CHECK(ax0 == (frame.width - visible[0].rect.width) / 2);
+
+    // Some pixels changed, untouched background kept color and alpha.
+    bool changed = false;
+    bool bg_kept = true;
+    for (size_t i = 0; i < frame.pixels.size(); i += 4) {
+      if (out.pixels[i] != frame.pixels[i] ||
+          out.pixels[i + 3] != frame.pixels[i + 3]) {
+        changed = true;
+      } else if (out.pixels[i] != 30 || out.pixels[i + 1] != 60 ||
+                 out.pixels[i + 2] != 90 || out.pixels[i + 3] != 128) {
+        bg_kept = false;
+      }
+    }
+    CHECK(changed && bg_kept);
+
+    // Random seek backwards and forwards is independent of history.
+    CHECK(track->Sample(9500, frame, &out, &visible) == Error::kOk);
+    CHECK(visible.size() == 1 && visible[0].id == "c");
+    CHECK(track->Sample(500, frame, &out, &visible) == Error::kOk);
+    CHECK(visible.size() == 2 && visible[0].id == "a");
+
+    // Input frame is never modified.
+    VideoFrame before = frame;
+    CHECK(track->Sample(700, frame, &out, &visible) == Error::kOk);
+    CHECK(frame.pixels == before.pixels);
+
+    // Snapshot: mutating the cue list after build has no effect.
+    cues.clear();
+    CHECK(track->Sample(700, frame, &out, &visible) == Error::kOk);
+    CHECK(visible.size() == 2);
+
+    // Too wide: whole call fails, no half image.
+    VideoFrame narrow;
+    narrow.width = 4; narrow.height = 200;
+    narrow.pixels.assign(4 * 200 * 4, 0);
+    CHECK(track->Sample(0, narrow, &out, &visible) == Error::kDoesNotFit);
+
+    // Too tall: margins plus stacked captions exceed the frame.
+    CaptionTrackOptions tight_opts = opts;
+    tight_opts.bottom_margin = 100;
+    std::unique_ptr<CaptionTrack> tight_track;
+    std::vector<CaptionCue> single = {{"x", "Hi", 0, 1000}};
+    CHECK(BuildCaptionTrack(single, "fonts/DejaVuSans.ttf", tight_opts,
+                            &tight_track) == Error::kOk);
+    CHECK(tight_track->Sample(0, frame, &out, &visible) ==
+          Error::kDoesNotFit);
+  }
+
+  // CompositeMask regression: white fill and white stroke with alpha
+  // 128 must stay white, not wrap to black.
+  {
+    RasterStyle half_white;
+    half_white.fill = Rgba{255, 255, 255, 128};
+    half_white.stroke = Rgba{255, 255, 255, 128};
+    half_white.stroke_radius = 2.0;
+    half_white.padding = 2;
+    Layout wlay;
+    RasterImage wimg;
+    CHECK(LaysOut(&engine, "OO", BaseDirection::kLtr, &wlay));
+    CHECK(engine.RasterizeLine(wlay, 40.0, half_white, &wimg) ==
+          Error::kOk);
+    for (size_t i = 0; i < wimg.pixels.size(); i += 4) {
+      if (wimg.pixels[i + 3] != 0) {
+        CHECK(wimg.pixels[i] >= wimg.pixels[i + 3]);
+        CHECK(wimg.pixels[i] != 0);
+      }
+    }
+  }
 
   if (failures == 0) {
     std::printf("all selftests passed\n");

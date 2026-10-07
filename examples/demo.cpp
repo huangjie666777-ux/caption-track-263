@@ -1,11 +1,15 @@
 // Mixed Arabic/Hebrew/Latin line layout and selection mapping demo.
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "caption_track263/caption_track263.h"
 
 using caption_track263::BaseDirection;
+using caption_track263::BuildCaptionTrack;
+using caption_track263::CaptionCue;
+using caption_track263::CaptionTrackOptions;
 using caption_track263::Engine;
 using caption_track263::Error;
 using caption_track263::Layout;
@@ -13,6 +17,8 @@ using caption_track263::RasterImage;
 using caption_track263::RasterStyle;
 using caption_track263::Rgba;
 using caption_track263::SelectionRange;
+using caption_track263::VideoFrame;
+using caption_track263::VisibleCaption;
 
 static void Dump(Engine& engine, const std::string& text,
                  BaseDirection dir) {
@@ -117,5 +123,67 @@ int main() {
               image.height, image.line_width);
   std::printf("  canvas top-left relative to baseline origin: (%d, %d)\n",
               image.origin_x, image.origin_y);
+
+  // Timed caption track: overlapping cues rendered at seeked times.
+  std::vector<CaptionCue> cues = {
+      {"bottom", "Hello world", 0, 2000},
+      {"top", "\u0645\u0631\u062D\u0628\u0627", 1000, 3000},
+      {"late", "seek target", 5000, 6000},
+  };
+  CaptionTrackOptions track_options;
+  track_options.font_size = 26.0;
+  track_options.style.fill = Rgba{255, 255, 255, 255};
+  track_options.style.stroke = Rgba{0, 0, 0, 220};
+  track_options.style.stroke_radius = 1.5;
+  track_options.style.padding = 4;
+  track_options.bottom_margin = 12;
+  track_options.line_spacing = 8;
+
+  std::unique_ptr<caption_track263::CaptionTrack> track;
+  Error track_err =
+      BuildCaptionTrack(cues, "fonts/DejaVuSans.ttf", track_options,
+                        &track);
+  if (track_err != Error::kOk) {
+    std::fprintf(stderr, "track build failed: %s\n",
+                 ErrorMessage(track_err));
+    return 1;
+  }
+
+  VideoFrame source;
+  source.width = 320;
+  source.height = 180;
+  source.pixels.assign(source.width * source.height * 4, 0);
+  for (int y = 0; y < source.height; ++y) {
+    for (int x = 0; x < source.width; ++x) {
+      uint8_t* p = &source.pixels[(y * source.width + x) * 4];
+      p[0] = static_cast<uint8_t>(20 + x / 3);
+      p[1] = static_cast<uint8_t>(40 + y / 3);
+      p[2] = 140;
+      p[3] = 180;  // Semi-transparent background is preserved.
+    }
+  }
+
+  // Seek arbitrarily: overlap, back before overlap, then forward.
+  const int64_t sample_times[] = {1500, 500, 5500};
+  for (int64_t t : sample_times) {
+    VideoFrame rendered;
+    std::vector<VisibleCaption> visible;
+    track_err = track->Sample(t, source, &rendered, &visible);
+    if (track_err != Error::kOk) {
+      std::fprintf(stderr, "sample at %lld ms failed: %s\n",
+                   static_cast<long long>(t), ErrorMessage(track_err));
+      return 1;
+    }
+    char out[256];
+    std::snprintf(out, sizeof(out), "build/track_%04lldms.png",
+                  static_cast<long long>(t));
+    Engine::SaveFramePng(rendered, out);
+    std::printf("\ntrack sample t=%lld ms: %s\n",
+                static_cast<long long>(t), out);
+    for (const auto& v : visible) {
+      std::printf("  id=%s rect=(%d,%d %dx%d)\n", v.id.c_str(),
+                  v.rect.x, v.rect.y, v.rect.width, v.rect.height);
+    }
+  }
   return 0;
 }

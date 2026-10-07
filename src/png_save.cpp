@@ -58,4 +58,13 @@ Error Engine::SavePng(const RasterImage& image, const std::string& path) {
   return Error::kOk;
 }
 
+Error Engine::SaveFramePng(const VideoFrame& frame,
+                           const std::string& path) {
+  RasterImage view;
+  view.pixels = frame.pixels;
+  view.width = frame.width;
+  view.height = frame.height;
+  return SavePng(view, path);
+}
+
 }  // namespace caption_track263

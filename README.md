@@ -56,6 +56,31 @@ The font is `fonts/DejaVuSans.ttf`.
   - Font sizes are 8..128 pixels. Fill and outline take 8-bit RGBA
     colors.
 - PNG saving writes the in-memory pixels byte-for-byte as 8-bit RGBA.
+- Timed caption tracks (`CaptionTrack` / `BuildCaptionTrack`) burn
+  pre-rendered captions into video frames at millisecond timestamps:
+  - Up to 100 cues with unique non-empty ids, single-line UTF-8 text,
+    and half-open 64-bit millisecond ranges (`start <= t < end`).
+    Cues may arrive out of order and may overlap. Building reuses the
+    original `LayoutLine`/`RasterizeLine` validation, rasterizes every
+    cue once, and snapshots text and style; any failure returns no
+    track. No-ink cues (empty/whitespace text or zero-alpha colors)
+    are retained but never occupy stack space.
+  - `Sample` takes any non-negative time and a top-to-bottom straight
+    RGBA8 frame (positive size, exact byte count, at most 4,000,000
+    pixels). Selection and placement are stateless, so seeking forward
+    or backward always gives the same result, independent of previous
+    samples and of caller mutations after the track was built.
+  - Active captions stack bottom-to-top in cue input order (the first
+    active cue is lowest), each image centered horizontally by its ink
+    bounding box, separated by an integer line spacing and lifted off
+    the bottom by an integer margin. If any image is wider than the
+    frame or the whole stack is too tall, the call fails without
+    scaling, cropping, or returning a partially drawn frame. With no
+    active caption the frame is returned as an exact copy.
+  - Images composite source-over onto a copy of the input frame,
+    preserving background straight-alpha color and transparency, and
+    the returned list reports each visible caption id with its pixel
+    rectangle.
 
 ## Public API
 
@@ -82,6 +107,27 @@ engine.RasterizeLine(layout, 24.0, style, &image);
 // image.origin_x / origin_y: canvas top-left relative to the baseline
 //   origin (x right, y down)
 caption_track263::Engine::SavePng(image, "subtitle.png");
+
+// Timed track: build once, sample at arbitrary millisecond times.
+std::vector<caption_track263::CaptionCue> cues = {
+    {"line1", "Hello", 0, 2000},
+    {"line2", "\u0645\u0631\u062D\u0628\u0627", 1000, 3000},
+};
+caption_track263::CaptionTrackOptions options;
+options.font_size = 24.0;
+options.style = style;
+options.bottom_margin = 8;
+options.line_spacing = 4;
+std::unique_ptr<caption_track263::CaptionTrack> track;
+caption_track263::Error track_err =
+    caption_track263::BuildCaptionTrack(
+        cues, "fonts/DejaVuSans.ttf", options, &track);
+
+caption_track263::VideoFrame frame;  // straight RGBA8, top to bottom
+caption_track263::VideoFrame rendered;
+std::vector<caption_track263::VisibleCaption> visible;
+track->Sample(1500, frame, &rendered, &visible);  // both cues overlap
+caption_track263::Engine::SaveFramePng(rendered, "frame_1500.png");
 ```
 
 ## Source layout
@@ -94,14 +140,22 @@ caption_track263::Engine::SavePng(image, "subtitle.png");
 - `src/raster.cpp` — FreeType grayscale raster, rounded outline,
   per-line coverage merge and source-over RGBA compositing.
 - `src/png_save.cpp` — 8-bit RGBA PNG output via libpng.
+- `src/track.cpp` — cue validation/snapshot, time selection, bottom-up
+  placement, and source-over frame compositing for `CaptionTrack`.
+- `src/composite.h` — shared straight-alpha source-over blending.
 
 ## Build, test, demo
 
 ```sh
 make            # builds build/libcaption_track263.a, bin/demo, bin/selftest
 make test       # runs the selftest suite
-./bin/demo      # mixed-line layout + selection + transparent PNG example
+./bin/demo      # mixed-line layout + selection, plus timed-track PNG
+                # frames showing overlapping cues and arbitrary seeks
 ```
 
 Executables use `-Wl,-rpath,'$ORIGIN/../third_party/lib'`, so no
 `LD_LIBRARY_PATH` setup is needed.
+
+The timed-track demo writes `build/track_0500ms.png`,
+`build/track_1500ms.png` (two overlapping captions stacked above each
+other), and `build/track_5500ms.png` (a forward seek to a later cue).

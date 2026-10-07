@@ -27,6 +27,12 @@ const char* ErrorMessage(Error error) {
     case Error::kImageTooLarge: return "rasterized image exceeds 4,000,000 pixels";
     case Error::kNoInk: return "line has no visible pixels";
     case Error::kFileIo: return "cannot write PNG file";
+    case Error::kBadCue: return "invalid caption cue";
+    case Error::kTooManyCues: return "more than 100 caption cues";
+    case Error::kDuplicateId: return "duplicate caption cue id";
+    case Error::kBadMargin: return "invalid margin or line spacing";
+    case Error::kBadFrame: return "invalid video frame";
+    case Error::kDoesNotFit: return "captions do not fit the frame";
   }
   return "unknown error";
 }

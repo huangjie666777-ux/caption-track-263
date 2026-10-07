@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,12 @@ enum class Error {
   kImageTooLarge,  // Rasterized canvas would exceed 4,000,000 pixels.
   kNoInk,          // Line has no visible pixels; nothing was rendered.
   kFileIo,         // PNG file could not be written.
+  kBadCue,         // Cue id/text/time range is invalid.
+  kTooManyCues,    // More than 100 cues were supplied.
+  kDuplicateId,    // Two cues share the same non-empty id.
+  kBadMargin,      // Bottom margin or line spacing is invalid.
+  kBadFrame,       // Frame dimensions or pixel buffer are invalid.
+  kDoesNotFit,     // Caption stack does not fit the frame.
 };
 
 const char* ErrorMessage(Error error);
@@ -99,6 +106,8 @@ struct RasterImage {
   int origin_y = 0;
 };
 
+struct VideoFrame;
+
 class Engine {
  public:
   // Loads the font file. Check GetError() after construction.
@@ -135,11 +144,99 @@ class Engine {
   // Writes the pixels of a RasterImage to a 8-bit RGBA PNG file,
   // byte-identical to the in-memory content.
   static Error SavePng(const RasterImage& image, const std::string& path);
+  // Same byte-for-byte RGBA output for a composited video frame.
+  static Error SaveFramePng(const VideoFrame& frame,
+                            const std::string& path);
 
  private:
   struct Impl;
   Impl* impl_;
 };
+
+// One timed, single-line subtitle cue. Times are milliseconds; a cue
+// is active while start_ms <= t < end_ms.
+struct CaptionCue {
+  std::string id;
+  std::string text;
+  int64_t start_ms = 0;
+  int64_t end_ms = 0;
+};
+
+// Immutable configuration captured when a track is built.
+struct CaptionTrackOptions {
+  double font_size = 24.0;
+  BaseDirection base_direction = BaseDirection::kAuto;
+  RasterStyle style;
+  // Non-negative integer pixels left between the frame bottom and the
+  // lowest caption, and between stacked caption images.
+  int bottom_margin = 0;
+  int line_spacing = 0;
+};
+
+// Straight (non-premultiplied) RGBA8 frame, rows stored top to bottom
+// from the top-left pixel.
+struct VideoFrame {
+  std::vector<uint8_t> pixels;
+  int width = 0;
+  int height = 0;
+};
+
+// Axis-aligned pixel rectangle of a composited caption image.
+struct CaptionRect {
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+};
+
+// A caption visible in a sampled frame, listed bottom-to-top in cue
+// input order.
+struct VisibleCaption {
+  std::string id;
+  CaptionRect rect;
+};
+
+// An immutable, time-indexed collection of rasterized captions.
+class CaptionTrack {
+ public:
+  ~CaptionTrack();
+
+  // Selects every cue active at time_ms (start_ms <= time_ms <
+  // end_ms), stacks the inked images bottom-to-top in input order,
+  // composites them source-over onto a copy of the input frame, and
+  // reports each visible id and pixel rectangle. Seeking forwards or
+  // backwards is stateless. With no active caption the frame is copied
+  // unchanged and the visible list is empty. Fails entirely (without
+  // modifying the input) when the stack is too wide or too tall.
+  Error Sample(int64_t time_ms, const VideoFrame& frame,
+               VideoFrame* out_frame,
+               std::vector<VisibleCaption>* out_visible) const;
+
+ private:
+  friend Error BuildCaptionTrack(const std::vector<CaptionCue>&,
+                                 const std::string&,
+                                 const CaptionTrackOptions&,
+                                 std::unique_ptr<CaptionTrack>*);
+  CaptionTrack() = default;
+  CaptionTrack(const CaptionTrack&) = delete;
+  CaptionTrack& operator=(const CaptionTrack&) = delete;
+
+  struct PreparedCue {
+    CaptionCue cue;
+    RasterImage image;  // 0x0 when the line has no ink.
+  };
+  std::vector<PreparedCue> cues_;
+  CaptionTrackOptions options_;
+};
+
+// Validates the cues against the same rules as LayoutLine /
+// RasterizeLine, shapes and rasterizes every cue immediately, and
+// snapshots the text and style inside the returned track. The track
+// is not assigned on any failure.
+Error BuildCaptionTrack(const std::vector<CaptionCue>& cues,
+                        const std::string& font_path,
+                        const CaptionTrackOptions& options,
+                        std::unique_ptr<CaptionTrack>* out_track);
 
 }  // namespace caption_track263
 

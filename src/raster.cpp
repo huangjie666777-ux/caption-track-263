@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "caption_track263/caption_track263.h"
+#include "composite.h"
 #include "engine_internal.h"
 
 namespace caption_track263 {
@@ -55,21 +56,8 @@ void CompositeMask(const std::vector<uint8_t>& mask, int width, int height,
     unsigned sa = (static_cast<unsigned>(mask[i]) * color.a) / 255u;
     if (sa == 0) continue;
     uint8_t* dst = &(*pixels)[i * 4];
-    unsigned da = dst[3];
-    // Source-over with straight alpha.
-    unsigned out_a = sa + da * (255u - sa) / 255u;
-    if (out_a == 0) continue;
-    unsigned sr = color.r;
-    unsigned sg = color.g;
-    unsigned sb = color.b;
-    unsigned inv = (255u - sa);
-    unsigned out_r = (sr * sa + dst[0] * da * inv / 255u) / out_a;
-    unsigned out_g = (sg * sa + dst[1] * da * inv / 255u) / out_a;
-    unsigned out_b = (sb * sa + dst[2] * da * inv / 255u) / out_a;
-    dst[0] = static_cast<uint8_t>(out_r);
-    dst[1] = static_cast<uint8_t>(out_g);
-    dst[2] = static_cast<uint8_t>(out_b);
-    dst[3] = static_cast<uint8_t>(out_a);
+    CompositeSourceOver(color.r, color.g, color.b,
+                        static_cast<uint8_t>(sa), dst);
   }
 }
 
